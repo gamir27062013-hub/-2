@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ресторан: Столы и Калькулятор</title>
+    <style>
+        /* --- БАЗОВЫЕ СТИЛИ --- */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #121212;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden; /* Скрываем скроллы */
+            height: 100vh;
+            width: 100vw;
+            user-select: none;
+        }
+
+        /* --- ХОЛСТ ЗАЛА (Статичный) --- */
+        #hall-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            /* Убраны трансформации зума */
+        }
+
+        /* --- ИНТЕРФЕЙС (Панели поверх холста) --- */
+        .ui-layer {
+            position: fixed;
+            z-index: 1000;
+            pointer-events: none; /* Пропускаем клики сквозь пустые места */
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+        }
+
+        .ui-element {
+            pointer-events: auto; /* Включаем клики для панелей */
+            background: #1e1e1e;
+            border: 1px solid #333;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+            border-radius: 8px;
+        }
+
+        /* Левая панель управления */
+        .controls-left {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 15px;
+        }
+
+        /* Правая панель калькулятора */
+        .calculator-right {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 280px;
+            padding: 20px;
+        }
+
+        /* --- ЭЛЕМЕНТЫ УПРАВЛЕНИЯ --- */
+        h3 { margin: 0 0 15px 0; font-size: 18px; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        
+        button {
+            background-color: #ffffff;
+            color: #000000;
+            border: none;
+            padding: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: 0.2s;
+            width: 100%;
+            margin-bottom: 5px;
+        }
+        button:hover { background-color: #ddd; }
+        button.secondary { background-color: #444; color: #fff; }
+        button.secondary:hover { background-color: #555; }
+
+        /* Поля ввода калькулятора */
+        .calc-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .calc-row label { font-size: 14px; color: #aaa; }
+        .calc-row input {
+            background: #333;
+            border: 1px solid #555;
+            color: #fff;
+            padding: 5px;
+            width: 100px;
+            text-align: right;
+            border-radius: 4px;
+        }
+        .total-display {
+            font-size: 24px;
+            font-weight: bold;
+            text-align: right;
+            margin-top: 15px;
+            color: #4CAF50;
+        }
+
+        /* --- СТОЛ --- */
+        .table {
+            position: absolute;
+            width: 140px;
+            height: 140px;
+            background-color: #252525;
+            border: 2px solid #444;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: grab;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            transition: border-color 0.3s;
+        }
+        .table:active { cursor: grabbing; border-color: #fff; }
+        
+        .table-id { font-size: 18px; font-weight: bold; pointer-events: none; }
+        .order-text { 
+            font-size: 11px; color: #aaa; text-align: center; width: 80%; 
+            overflow: hidden; white-space: nowrap; text-overflow: ellipsis; pointer-events: none;
+            min-height: 14px; margin-bottom: 5px;
+        }
+        .btn-add-order {
+            width: 32px; height: 32px; border-radius: 50%; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; line-height: 1;
+        }
+
+        /* --- МОДАЛЬНОЕ ОКНО --- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal {
+            background: #1e1e1e;
+            padding: 20px;
+            border-radius: 8px;
+            width: 320px;
+            border: 1px solid #444;
+        }
+        textarea {
+            width: 100%; height: 100px; background: #333; color: #fff;
+            border: 1px solid #555; padding: 10px; margin: 10px 0;
+            resize: vertical; box-sizing: border-box;
+        }
+        .modal-actions { display: flex; justify-content: space-between; gap: 10px; }
+
+    </style>
+</head>
+<body>
+
+    <!-- Холст зала -->
+    <div id="hall-container">
+        <!-- Столы добавляются сюда -->
+    </div>
+
+    <!-- UI Слой -->
+    <div class="ui-layer">
+        
+        <!-- Левая панель -->
+        <div class="ui-element controls-left">
+            <button id="addTableBtn">+ Добавить стол</button>
+        </div>
+
+        <!-- Правая панель: Калькулятор -->
+        <div class="ui-element calculator-right">
+            <h3>Калькулятор</h3>
+            
+            <div class="calc-row">
+                <label>Счет (₽):</label>
+                <input type="number" id="calc-bill" value="0" oninput="calculateTotal()">
+            </div>
+            
+            <div class="calc-row">
+                <label>Гостей:</label>
+                <input type="number" id="calc-guests" value="1" min="1" oninput="calculateTotal()">
+            </div>
+
+            <div class="calc-row">
+                <label>Чаевые (%):</label>
+                <input type="number" id="calc-tip" value="10" oninput="calculateTotal()">
+            </div>
+
+            <hr style="border-color: #333; opacity: 0.3;">
+
+            <div class="calc-row">
+                <label>Итого:</label>
+                <span id="display-total" style="font-weight: bold;">0 ₽</span>
+            </div>
+            <div class="calc-row">
+                <label>С человека:</label>
+                <span id="display-per-person" style="font-weight: bold;">0 ₽</span>
+            </div>
+
+            <button class="secondary" onclick="resetCalculator()" style="margin-top: 15px;">Сброс</button>
+        </div>
+
+    </div>
+
+    <!-- Модальное окно заказа -->
+    <div class="modal-overlay" id="orderModal">
+        <div class="modal">
+            <h3 id="modalTitle">Заказ</h3>
+            <textarea id="orderInput" placeholder="Блюда, напитки..."></textarea>
+            <div class="modal-actions">
+                <button class="secondary" id="closeModalBtn">Отмена</button>
+                <button id="saveOrderBtn">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- ПЕРЕМЕННЫЕ ---
+        let tableCounter = 0;
+        let activeTableId = null;
+
+        // --- ИНИЦИАЛИЗАЦИЯ ---
+        document.addEventListener('DOMContentLoaded', () => {
+            createTable(); // Создаем первый стол сразу
+        });
+
+        // --- ЛОГИКА СТОЛОВ ---
+        const addTableBtn = document.getElementById('addTableBtn');
+        const hallContainer = document.getElementById('hall-container');
+        
+        addTableBtn.addEventListener('click', createTable);
+
+        function createTable() {
+            tableCounter++;
+            const tableId = `table-${tableCounter}`;
+            
+            const table = document.createElement('div');
+            table.className = 'table';
+            table.id = tableId;
+            
+            // Начальная позиция "лесенкой"
+            const offset = (tableCounter * 30) % 300; // Ограничиваем разброс
+            table.style.left = `${150 + offset}px`;
+            table.style.top = `${150 + offset}px`;
+
+            table.innerHTML = `
+                <div class="table-id">Стол ${tableCounter}</div>
+                <div class="order-text" id="text-${tableCounter}"></div>
+                <button class="btn-add-order" title="Заказ">+</button>
+            `;
+
+            makeDraggable(table);
+
+            // Клик по плюсу
+            const addBtn = table.querySelector('.btn-add-order');
+            addBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Чтобы не начать перетаскивание стола
+                openOrderModal(tableCounter);
+            });
+
+            hallContainer.appendChild(table);
+        }
+
+        // Перетаскивание отдельных столов
+        function makeDraggable(elmnt) {
+            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+
+            elmnt.onmousedown = dragMouseDown;
+
+            function dragMouseDown(e) {
+                if (e.target.tagName === 'BUTTON') return; // Игнорируем кнопку
+                if (e.button !== 0) return; // Только левая кнопка мыши
+
+                e.preventDefault();
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = closeDragElement;
+                document.onmousemove = elementDrag;
+                elmnt.style.zIndex = 100; // Поднимаем активный стол
+            }
+
+            function elementDrag(e) {
+                e.preventDefault();
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+
+                elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+                elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+            }
+
+            function closeDragElement() {
+                document.onmouseup = null;
+                document.onmousemove = null;
+                elmnt.style.zIndex = "";
+            }
+        }
+
+
+        // --- ЛОГИКА ЗАКАЗОВ ---
+        const modal = document.getElementById('orderModal');
+        const orderInput = document.getElementById('orderInput');
+        const saveOrderBtn = document.getElementById('saveOrderBtn');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const modalTitle = document.getElementById('modalTitle');
+
+        function openOrderModal(id) {
+            activeTableId = id;
+            const currentText = document.getElementById(`text-${id}`).innerText;
+            modalTitle.innerText = `Заказ: Стол ${id}`;
+            orderInput.value = currentText;
+            modal.style.display = 'flex';
+        }
+
+        function closeModal() {
+            modal.style.display = 'none';
+            activeTableId = null;
+        }
+
+        saveOrderBtn.addEventListener('click', () => {
+            if (activeTableId) {
+                const textField = document.getElementById(`text-${activeTableId}`);
+                const val = orderInput.value.trim();
+                textField.innerText = val;
+                
+                const tableEl = document.getElementById(`table-${activeTableId}`);
+                // Зеленая рамка, если есть заказ
+                tableEl.style.borderColor = val ? '#4CAF50' : '#444';
+            }
+            closeModal();
+        });
+
+        closeModalBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => { if(e.target === modal) closeModal(); });
+
+
+        // --- ЛОГИКА КАЛЬКУЛЯТОРА ---
+        function calculateTotal() {
+            const bill = parseFloat(document.getElementById('calc-bill').value) || 0;
+            const guests = parseFloat(document.getElementById('calc-guests').value) || 1;
+            const tipPercent = parseFloat(document.getElementById('calc-tip').value) || 0;
+
+            const tipAmount = bill * (tipPercent / 100);
+            const total = bill + tipAmount;
+            const perPerson = guests > 0 ? total / guests : 0;
+
+            document.getElementById('display-total').innerText = total.toFixed(0) + ' ₽';
+            document.getElementById('display-per-person').innerText = perPerson.toFixed(0) + ' ₽';
+        }
+
+        function resetCalculator() {
+            document.getElementById('calc-bill').value = 0;
+            document.getElementById('calc-guests').value = 1;
+            document.getElementById('calc-tip').value = 10;
+            calculateTotal();
+        }
+    </script>
+</body>
+</html>
